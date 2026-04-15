@@ -326,6 +326,19 @@ export default function App() {
         }}
       />
 
+      {/* Welcome Screen – rendered outside AnimatePresence/motion.div with filter
+          so that its `fixed inset-0` is relative to the viewport, not a collapsed motion.div */}
+      <AnimatePresence>
+        {step === 0 && (
+          <motion.div
+            key="welcome"
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
+          >
+            <WelcomeContent step={STEPS[0]} onNext={handleNext} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header – hidden on welcome (it has its own) */}
       <header className={cn("relative z-10 px-5 pt-5 pb-3 flex items-center justify-between", step === 0 && "hidden")}>
         <img
@@ -356,6 +369,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 relative z-10 flex flex-col w-full max-w-[480px] mx-auto px-5 py-6" onKeyDown={handleKeyDown}>
+        <div className="my-auto">
         <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={step}
@@ -364,9 +378,8 @@ export default function App() {
             animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
             exit={(d: number) => ({ opacity: 0, x: d * -80, scale: 0.96, filter: 'blur(6px)' })}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="flex-1 flex flex-col justify-center"
+            className="w-full flex-none"
           >
-            {currentStep.type === 'welcome' && <WelcomeContent step={currentStep} onNext={handleNext} />}
             {currentStep.type === 'success' && <SuccessContent step={currentStep} />}
             {currentStep.type === 'text' && (
               <TextInputContent
@@ -462,7 +475,7 @@ export default function App() {
 
         {/* Navigation */}
         {currentStep.type !== 'success' && currentStep.type !== 'welcome' && (
-          <div className="pt-4 pb-2">
+          <div className="pt-8 pb-2">
             {currentStep.type !== 'select' ? (
               <div className="flex items-center gap-3">
                 <button
@@ -506,6 +519,7 @@ export default function App() {
             )}
           </div>
         )}
+        </div>
       </main>
     </div>
   );
