@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronRight, ChevronLeft, Home, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 import { cn } from './lib/utils';
+import logoImg from './imgs/A - AMAURI - LOGO COLORIDA - FUNDO CLARO.png';
+import amauriPhoto from './imgs/AMAURI FOTO PRINCIPAL COMPLETA.png';
 
 type FormData = {
   name: string;
@@ -27,458 +29,818 @@ const initialFormData: FormData = {
   location: '',
 };
 
+// ─── Validation helpers ────────────────────────────────────────────
+
+function validateName(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Preencha seu nome completo.';
+  if (trimmed.length < 3) return 'O nome precisa ter pelo menos 3 caracteres.';
+  if (!/\s/.test(trimmed)) return 'Informe nome e sobrenome.';
+  if (!/^[A-Za-zÀ-ÿ\s'-]+$/.test(trimmed)) return 'O nome contém caracteres inválidos.';
+  return null;
+}
+
+function validateEmail(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Preencha seu e-mail.';
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!emailRegex.test(trimmed)) return 'Informe um e-mail válido. Ex: nome@email.com';
+  return null;
+}
+
+function validatePhone(value: string): string | null {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return 'Preencha seu WhatsApp.';
+  if (digits.length < 10) return 'O número precisa ter pelo menos 10 dígitos (com DDD).';
+  if (digits.length > 11) return 'O número tem dígitos demais.';
+  return null;
+}
+
+function validateSelection(value: string): string | null {
+  if (!value) return 'Selecione uma opção para continuar.';
+  return null;
+}
+
+// ─── Phone mask ────────────────────────────────────────────────────
+
+function applyPhoneMask(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+// ─── Step definitions ──────────────────────────────────────────────
+
+type StepDef = {
+  id: keyof FormData | 'welcome' | 'success';
+  label: string;
+  title: string;
+  subtitle?: string;
+  type: 'welcome' | 'text' | 'email' | 'phone' | 'select' | 'success';
+  placeholder?: string;
+  options?: string[];
+  validate?: (v: string) => string | null;
+};
+
+const STEPS: StepDef[] = [
+  {
+    id: 'welcome',
+    label: 'Boas-vindas',
+    title: 'Olá! É uma honra ter você por aqui.',
+    subtitle:
+      'Para que possamos te entregar um atendimento individualizado e de alta performance, precisamos primeiro entender quem você é e qual a sua realidade atual.',
+    type: 'welcome',
+  },
+  {
+    id: 'name',
+    label: 'Nome',
+    title: 'Qual é o seu nome completo?',
+    type: 'text',
+    placeholder: 'Ex: João da Silva',
+    validate: validateName,
+  },
+  {
+    id: 'email',
+    label: 'E-mail',
+    title: 'Qual o seu melhor e-mail?',
+    subtitle: 'Enviaremos as melhores oportunidades por lá.',
+    type: 'email',
+    placeholder: 'joao@exemplo.com',
+    validate: validateEmail,
+  },
+  {
+    id: 'phone',
+    label: 'WhatsApp',
+    title: 'Qual o seu WhatsApp?',
+    subtitle: 'Nosso time entrará em contato por esse número.',
+    type: 'phone',
+    placeholder: '(00) 00000-0000',
+    validate: validatePhone,
+  },
+  {
+    id: 'propertyType',
+    label: 'Imóvel',
+    title: 'Que tipo de imóvel você busca?',
+    type: 'select',
+    options: ['Apartamento', 'Casa', 'Terreno', 'Comercial'],
+    validate: validateSelection,
+  },
+  {
+    id: 'buyingTimeframe',
+    label: 'Prazo',
+    title: 'Quando pretende comprar?',
+    type: 'select',
+    options: ['Imediatamente', 'Em até 3 meses', 'Em até 6 meses', 'Apenas pesquisando'],
+    validate: validateSelection,
+  },
+  {
+    id: 'income',
+    label: 'Renda',
+    title: 'Qual a sua renda familiar mensal?',
+    subtitle: 'Essa informação é confidencial e ajuda a encontrar as melhores condições de financiamento.',
+    type: 'select',
+    options: ['Até R$ 5.000', 'R$ 5.001 a R$ 10.000', 'R$ 10.001 a R$ 20.000', 'Acima de R$ 20.000'],
+    validate: validateSelection,
+  },
+  {
+    id: 'downPayment',
+    label: 'Entrada',
+    title: 'Qual valor disponível para entrada?',
+    subtitle: 'O valor da entrada determina diretamente seu poder de financiamento.',
+    type: 'select',
+    options: ['Até R$ 20.000', 'R$ 20.001 a R$ 50.000', 'R$ 50.001 a R$ 100.000', 'Acima de R$ 100.000'],
+    validate: validateSelection,
+  },
+  {
+    id: 'success',
+    label: 'Concluído',
+    title: 'Aplicação Recebida!',
+    subtitle:
+      'Obrigado por compartilhar suas informações. Nossa equipe de especialistas vai analisar seu perfil e entrar em contato em breve pelo WhatsApp.',
+    type: 'success',
+  },
+];
+
+const TOTAL_QUESTIONS = STEPS.length - 2; // exclude welcome & success
+
+// ─── Webhook ───────────────────────────────────────────────────────
+
+const WEBHOOK_URL = import.meta.env.DEV
+  ? '/api/webhook'
+  : 'https://editor.leaderaperformance.com.br/webhook/amauri-form-insta';
+
+// Used when the page is CLOSING (beforeunload) — sendBeacon is the only reliable method
+function sendBeaconWebhook(payload: Record<string, unknown>) {
+  console.log('[WEBHOOK] sendBeacon (abandono):', payload);
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+  navigator.sendBeacon(WEBHOOK_URL, blob);
+}
+
+// Used when the page is OPEN (form completed) — regular fetch
+async function sendFetchWebhook(payload: Record<string, unknown>) {
+  console.log('[WEBHOOK] fetch (completo):', payload);
+  try {
+    const res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log('[WEBHOOK] response status:', res.status);
+  } catch (err) {
+    console.error('[WEBHOOK] fetch error:', err);
+  }
+}
+
+// ─── App ───────────────────────────────────────────────────────────
+
 export default function App() {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [direction, setDirection] = useState(1); // 1 = forward, -1 = back
 
-  const updateFormData = (field: keyof FormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  // Refs to keep fresh values accessible in unload/visibility event handlers
+  const stepRef = React.useRef(step);
+  const formDataRef = React.useRef(formData);
+  const sentRef = React.useRef(false); // prevent duplicate sends
+
+  React.useEffect(() => { stepRef.current = step; }, [step]);
+  React.useEffect(() => { formDataRef.current = formData; }, [formData]);
+
+  // ── Abandonment detection (only on actual page close/refresh) ──
+  React.useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sentRef.current) return; // already sent (completed form)
+      sentRef.current = true; // prevent duplicate
+      const currentStepIndex = stepRef.current;
+      // Only send if user actually started filling (past welcome)
+      if (currentStepIndex > 0 && currentStepIndex < STEPS.length - 1) {
+        const currentStepDef = STEPS[currentStepIndex];
+        sendBeaconWebhook({
+          status: 'abandono',
+          etapaAbandono: currentStepDef.label,
+          etapaNumero: currentStepIndex,
+          totalEtapas: TOTAL_QUESTIONS,
+          dados: { ...formDataRef.current },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  const currentStep = STEPS[step];
+
+  const updateFormData = useCallback(
+    (field: keyof FormData, value: string) => {
+      let processedValue = value;
+      if (field === 'phone') {
+        processedValue = applyPhoneMask(value);
+      }
+      setFormData((prev) => ({ ...prev, [field]: processedValue }));
+
+      // Clear error on change
+      const stepDef = STEPS.find((s) => s.id === field);
+      if (stepDef?.validate) {
+        const err = stepDef.validate(processedValue);
+        setErrors((prev) => ({ ...prev, [field]: err }));
+      }
+    },
+    []
+  );
+
+  const canProceed = (): boolean => {
+    if (currentStep.type === 'welcome' || currentStep.type === 'success') return true;
+    const field = currentStep.id as keyof FormData;
+    const value = formData[field];
+    if (!currentStep.validate) return true;
+    return currentStep.validate(value) === null;
   };
 
-  const nextStep = () => setStep((prev) => Math.min(prev + 1, 5));
-  const prevStep = () => setStep((prev) => Math.max(prev - 1, 0));
+  const handleNext = () => {
+    if (currentStep.type !== 'welcome' && currentStep.type !== 'success') {
+      const field = currentStep.id as keyof FormData;
+      const value = formData[field];
+      setTouched((prev) => ({ ...prev, [field]: true }));
+
+      if (currentStep.validate) {
+        const err = currentStep.validate(value);
+        setErrors((prev) => ({ ...prev, [field]: err }));
+        if (err) return;
+      }
+    }
+
+    if (step < STEPS.length - 1) {
+      const nextStep = step + 1;
+
+      // Send webhook when reaching the success step (form completed)
+      if (STEPS[nextStep].type === 'success') {
+        sentRef.current = true;
+        sendFetchWebhook({
+          status: 'completo',
+          etapaAbandono: null,
+          etapaNumero: nextStep,
+          totalEtapas: TOTAL_QUESTIONS,
+          dados: { ...formData },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      setDirection(1);
+      setStep(nextStep);
+    }
+  };
+
+  const handlePrev = () => {
+    if (step > 0) {
+      setDirection(-1);
+      setStep((prev) => prev - 1);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && canProceed()) {
+      e.preventDefault();
+      handleNext();
+    }
+  };
+
+  const questionIndex = step - 1; // 0-based question index (step 0 = welcome)
+  const progress = currentStep.type === 'success' ? 100 : Math.max(0, (questionIndex / TOTAL_QUESTIONS) * 100);
 
   return (
-    <div className="min-h-screen bg-[#0A0D12] text-white font-sans flex flex-col relative overflow-hidden">
+    <div className="min-h-[100dvh] bg-[#0F1338] text-white font-sans flex flex-col relative overflow-hidden">
       {/* Background Gradients */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: `
-          radial-gradient(circle at 0% 0%, rgba(242, 125, 38, 0.08) 0%, transparent 40%),
-          radial-gradient(circle at 100% 100%, rgba(30, 64, 175, 0.1) 0%, transparent 40%)
-        `
-      }} />
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `
+          radial-gradient(circle at 0% 0%, rgba(255, 194, 51, 0.06) 0%, transparent 40%),
+          radial-gradient(circle at 100% 100%, rgba(61, 97, 158, 0.12) 0%, transparent 40%)
+        `,
+        }}
+      />
 
-      {/* Header */}
-      <header className="relative z-10 p-6 md:p-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="font-extrabold tracking-[2px] text-lg uppercase">
-          Amauri <span className="text-[#F27D26]">Imobiliária</span>
-        </div>
-        {step > 0 && step < 4 && (
-          <div className="flex items-center gap-4">
-            <span className="text-xs font-semibold text-[#94A3B8] tracking-[1px] uppercase">
-              Etapa 0{step} de 03
-            </span>
-            <div className="w-32 md:w-[200px] h-1 bg-[rgba(255,255,255,0.1)] rounded-sm overflow-hidden">
-              <motion.div
-                className="h-full bg-[#F27D26]"
-                style={{ boxShadow: '0 0 10px rgba(242, 125, 38, 0.2)' }}
-                initial={{ width: `${((step - 1) / 3) * 100}%` }}
-                animate={{ width: `${(step / 3) * 100}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-          </div>
+      {/* Header – hidden on welcome (it has its own) */}
+      <header className={cn("relative z-10 px-5 pt-5 pb-3 flex items-center justify-between", step === 0 && "hidden")}>
+        <img
+          src={logoImg}
+          alt="Amauri Assessoria Imobiliária"
+          className="h-10 w-auto brightness-0 invert"
+        />
+        {step > 0 && step < STEPS.length - 1 && (
+          <span className="text-xs font-semibold text-[#94A3B8] tracking-[1px] tabular-nums">
+            {questionIndex}/{TOTAL_QUESTIONS}
+          </span>
         )}
       </header>
 
+      {/* Progress Bar */}
+      {step > 0 && step < STEPS.length - 1 && (
+        <div className="relative z-10 px-5">
+          <div className="w-full h-1 bg-[rgba(255,255,255,0.08)] rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-[#FFC233] rounded-full"
+              style={{ boxShadow: '0 0 10px rgba(255, 194, 51, 0.3)' }}
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 relative z-10 flex flex-col max-w-[1024px] w-full mx-auto p-6 md:p-10">
-        <AnimatePresence mode="wait">
+      <main className="flex-1 relative z-10 flex flex-col w-full max-w-[480px] mx-auto px-5 py-6" onKeyDown={handleKeyDown}>
+        <AnimatePresence mode="wait" custom={direction}>
           <motion.div
             key={step}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="w-full h-full flex flex-col"
+            custom={direction}
+            initial={(d: number) => ({ opacity: 0, x: d * 80, scale: 0.96, filter: 'blur(6px)' })}
+            animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
+            exit={(d: number) => ({ opacity: 0, x: d * -80, scale: 0.96, filter: 'blur(6px)' })}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="flex-1 flex flex-col justify-center"
           >
-            {step === 0 && <WelcomeScreen onNext={nextStep} />}
-            {step === 1 && (
-              <PersonalStep
-                data={formData}
-                updateData={updateFormData}
-                onNext={nextStep}
-                onPrev={prevStep}
+            {currentStep.type === 'welcome' && <WelcomeContent step={currentStep} onNext={handleNext} />}
+            {currentStep.type === 'success' && <SuccessContent step={currentStep} />}
+            {currentStep.type === 'text' && (
+              <TextInputContent
+                step={currentStep}
+                value={formData[currentStep.id as keyof FormData]}
+                error={touched[currentStep.id] ? errors[currentStep.id] ?? null : null}
+                onChange={(v) => updateFormData(currentStep.id as keyof FormData, v)}
+                onBlur={() => {
+                  setTouched((p) => ({ ...p, [currentStep.id]: true }));
+                  if (currentStep.validate) {
+                    setErrors((p) => ({
+                      ...p,
+                      [currentStep.id]: currentStep.validate!(formData[currentStep.id as keyof FormData]),
+                    }));
+                  }
+                }}
               />
             )}
-            {step === 2 && (
-              <PreferencesStep
-                data={formData}
-                updateData={updateFormData}
-                onNext={nextStep}
-                onPrev={prevStep}
+            {currentStep.type === 'email' && (
+              <TextInputContent
+                step={currentStep}
+                value={formData[currentStep.id as keyof FormData]}
+                error={touched[currentStep.id] ? errors[currentStep.id] ?? null : null}
+                onChange={(v) => updateFormData(currentStep.id as keyof FormData, v)}
+                onBlur={() => {
+                  setTouched((p) => ({ ...p, [currentStep.id]: true }));
+                  if (currentStep.validate) {
+                    setErrors((p) => ({
+                      ...p,
+                      [currentStep.id]: currentStep.validate!(formData[currentStep.id as keyof FormData]),
+                    }));
+                  }
+                }}
+                inputType="email"
               />
             )}
-            {step === 3 && (
-              <FinancialStep
-                data={formData}
-                updateData={updateFormData}
-                onNext={nextStep}
-                onPrev={prevStep}
+            {currentStep.type === 'phone' && (
+              <TextInputContent
+                step={currentStep}
+                value={formData[currentStep.id as keyof FormData]}
+                error={touched[currentStep.id] ? errors[currentStep.id] ?? null : null}
+                onChange={(v) => updateFormData(currentStep.id as keyof FormData, v)}
+                onBlur={() => {
+                  setTouched((p) => ({ ...p, [currentStep.id]: true }));
+                  if (currentStep.validate) {
+                    setErrors((p) => ({
+                      ...p,
+                      [currentStep.id]: currentStep.validate!(formData[currentStep.id as keyof FormData]),
+                    }));
+                  }
+                }}
+                inputType="tel"
               />
             )}
-            {step === 4 && <SuccessScreen />}
+            {currentStep.type === 'select' && (
+              <SelectContent
+                step={currentStep}
+                value={formData[currentStep.id as keyof FormData]}
+                onChange={(v) => {
+                  console.log('[DEBUG] Select clicked:', currentStep.id, '=', v, 'current step:', step);
+                  updateFormData(currentStep.id as keyof FormData, v);
+                  setTouched((p) => ({ ...p, [currentStep.id]: true }));
+                  setErrors((p) => ({ ...p, [currentStep.id]: null }));
+
+                  const nextStep = step + 1;
+                  console.log('[DEBUG] nextStep:', nextStep, 'total STEPS:', STEPS.length, 'nextType:', STEPS[nextStep]?.type);
+
+                  // Auto-advance on select
+                  setTimeout(() => {
+                    console.log('[DEBUG] setTimeout fired, nextStep:', nextStep);
+                    // If next step is success, send completion webhook
+                    if (nextStep < STEPS.length && STEPS[nextStep].type === 'success') {
+                      console.log('[DEBUG] SENDING COMPLETION WEBHOOK');
+                      sentRef.current = true;
+                      sendFetchWebhook({
+                        status: 'completo',
+                        etapaAbandono: null,
+                        etapaNumero: nextStep,
+                        totalEtapas: TOTAL_QUESTIONS,
+                        dados: { ...formDataRef.current },
+                        timestamp: new Date().toISOString(),
+                      });
+                    }
+                    setDirection(1);
+                    setStep(nextStep);
+                  }, 300);
+                }}
+                error={touched[currentStep.id] ? errors[currentStep.id] ?? null : null}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
+
+        {/* Navigation */}
+        {currentStep.type !== 'success' && currentStep.type !== 'welcome' && (
+          <div className="pt-4 pb-2">
+            {currentStep.type !== 'select' ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrev}
+                  className="w-12 h-12 rounded-2xl border border-[rgba(61,97,158,0.3)] bg-[rgba(61,97,158,0.1)] flex items-center justify-center text-[#94A3B8] hover:text-white hover:border-[#3D619E] transition-all active:scale-95 shrink-0"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleNext}
+                  disabled={!canProceed()}
+                  className={cn(
+                    'flex-1 py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 active:scale-[0.97]',
+                    canProceed()
+                      ? 'bg-[#FFC233] text-[#0F1338]'
+                      : 'bg-[rgba(61,97,158,0.15)] text-[#64748B] cursor-not-allowed'
+                  )}
+                  style={canProceed() ? { boxShadow: '0 8px 24px rgba(255, 194, 51, 0.25)' } : undefined}
+                >
+                  Continuar
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center">
+                <button
+                  onClick={handlePrev}
+                  className="flex items-center gap-2 text-[#94A3B8] hover:text-white font-semibold transition-colors bg-transparent border-none active:scale-95"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                  Voltar
+                </button>
+              </div>
+            )}
+
+            {/* Keyboard hint – mobile users won't see this */}
+            {currentStep.type !== 'select' && canProceed() && (
+              <p className="text-center text-[#64748B] text-xs mt-3 hidden sm:block">
+                pressione <span className="font-mono bg-[rgba(255,255,255,0.06)] px-1.5 py-0.5 rounded text-[#94A3B8]">Enter ↵</span> para continuar
+              </p>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
-// --- Step Components ---
+// ─── Content Components ────────────────────────────────────────────
 
-function WelcomeScreen({ onNext }: { onNext: () => void }) {
+function WelcomeContent({ step, onNext }: { step: StepDef; onNext: () => void }) {
   return (
-    <div className="grid md:grid-cols-[1fr_380px] gap-10 md:gap-[60px] items-start h-full">
-      <div className="space-y-8">
-        <span className="text-[#F27D26] text-sm font-bold uppercase tracking-[2px] block">
-          Boas-vindas
-        </span>
-        <h1 className="text-4xl md:text-[2.5rem] leading-[1.2] font-bold tracking-[-0.02em]">
-          Olá! É uma honra ter você por aqui.
-        </h1>
-        <div className="space-y-6 text-[#94A3B8] text-lg leading-relaxed">
-          <p>
-            Para que possamos te entregar um atendimento individualizado e de alta performance, precisamos primeiro entender quem você é e qual a sua realidade atual.
-          </p>
-          <p>
-            A compra de um imóvel envolve diversos fatores técnicos e financeiros, por isso coletamos esses dados para direcionar você sempre à melhor solução.
-          </p>
-        </div>
+    <div className="fixed inset-0 z-20 flex flex-col overflow-hidden">
+      {/* Full Background Photo */}
+      <img
+        src={amauriPhoto}
+        alt="Amauri - Assessor Imobiliário"
+        className="absolute inset-0 w-full h-full object-cover scale-[1.1]"
+        style={{ objectPosition: 'center 15%' }}
+      />
+
+      {/* Multi-layer gradient for depth (not flat) */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `
+            linear-gradient(180deg,
+              rgba(15, 19, 56, 0) 0%,
+              rgba(15, 19, 56, 0.05) 20%,
+              rgba(15, 19, 56, 0.4) 45%,
+              rgba(15, 19, 56, 0.85) 62%,
+              rgba(15, 19, 56, 0.97) 78%,
+              rgb(15, 19, 56) 100%
+            )
+          `,
+        }}
+      />
+      {/* Radial glow for visual interest */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `
+            radial-gradient(ellipse at 30% 20%, rgba(61, 97, 158, 0.15) 0%, transparent 50%),
+            radial-gradient(ellipse at 70% 35%, rgba(255, 194, 51, 0.08) 0%, transparent 40%),
+            radial-gradient(ellipse at 50% 90%, rgba(61, 97, 158, 0.12) 0%, transparent 50%)
+          `,
+        }}
+      />
+
+      {/* Logo at top */}
+      <div className="relative z-10 px-5 pt-5">
+        <img
+          src={logoImg}
+          alt="Amauri Assessoria Imobiliária"
+          className="h-9 w-auto brightness-0 invert opacity-90"
+        />
       </div>
 
-      <aside className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.1)] p-8 rounded-[24px] backdrop-blur-md">
-        <div className="bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-full text-[0.7rem] uppercase inline-block mb-5">
-          💡 Por que somos criteriosos?
-        </div>
-        <h3 className="text-sm uppercase text-[#F27D26] mb-4 tracking-[1px] font-semibold">
-          Compromisso Mútuo
-        </h3>
-        <p className="text-[#94A3B8] leading-[1.6] text-[0.95rem]">
-          Nossa demanda é extremamente alta e prezamos por uma troca mútua de compromisso. Ao preencher este formulário de aplicação, você demonstra que tem interesse real em comprar o seu imóvel e nos permite dar atenção prioritária a quem, como você, está decidido a realizar esse sonho.
-          <br /><br />
-          Pode ter certeza: cada campo preenchido te deixa muito mais próximo das chaves na mão.
-        </p>
-      </aside>
+      {/* Spacer to push content down */}
+      <div className="flex-1" />
 
-      <div className="md:col-span-2 mt-auto pt-10 flex justify-end">
-        <button
+      {/* Content at the bottom */}
+      <div className="relative z-10 px-5 pb-8 space-y-3">
+        <motion.span
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-[#FFC233] text-xs font-bold uppercase tracking-[2px] block"
+        >
+          Boas-vindas
+        </motion.span>
+
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="text-[1.6rem] leading-[1.25] font-bold tracking-[-0.02em]"
+        >
+          {step.title}
+        </motion.h1>
+
+        <motion.p
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="text-[#CBD5E1] text-[0.875rem] leading-relaxed"
+        >
+          {step.subtitle}
+        </motion.p>
+
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="bg-[rgba(30,33,88,0.65)] border border-[rgba(61,97,158,0.25)] p-3.5 rounded-xl backdrop-blur-md"
+        >
+          <p className="text-xs text-[#FFC233] font-semibold mb-1 uppercase tracking-[1px]">💡 Compromisso Mútuo</p>
+          <p className="text-[#94A3B8] text-xs leading-[1.55]">
+            Ao preencher este formulário, você demonstra interesse real e nos permite dar atenção prioritária a quem está decidido a realizar o sonho da casa própria.
+          </p>
+        </motion.div>
+
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
           onClick={onNext}
-          className="bg-[#F27D26] text-black px-10 py-4 rounded-full font-bold text-base hover:scale-105 transition-transform flex items-center gap-2"
-          style={{ boxShadow: '0 10px 30px rgba(242, 125, 38, 0.2)' }}
+          className="w-full bg-[#FFC233] text-[#0F1338] py-3.5 rounded-2xl font-bold text-base transition-all active:scale-[0.97] flex items-center justify-center gap-2 mt-2"
+          style={{ boxShadow: '0 8px 24px rgba(255, 194, 51, 0.3)' }}
         >
           Começar Aplicação
           <ChevronRight className="w-5 h-5" />
-        </button>
+        </motion.button>
       </div>
     </div>
   );
 }
 
-function PersonalStep({
-  data,
-  updateData,
-  onNext,
-  onPrev,
-}: {
-  data: FormData;
-  updateData: (f: keyof FormData, v: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
-  const isValid = data.name.length > 2 && data.email.includes('@') && data.phone.length > 8;
+function SuccessContent({ step }: { step: StepDef }) {
+  const [countdown, setCountdown] = useState(3);
+
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          window.location.href = 'https://www.amaurinobre.com.br/';
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="grid md:grid-cols-[1fr_380px] gap-10 md:gap-[60px] items-start flex-1">
-        <div className="space-y-8">
-          <span className="text-[#F27D26] text-sm font-bold uppercase tracking-[2px] block">
-            Dados Pessoais
-          </span>
-          <h1 className="text-4xl md:text-[2.5rem] leading-[1.2] font-bold tracking-[-0.02em]">
-            Como podemos entrar em contato com você?
-          </h1>
-
-          <div className="space-y-5 mt-8">
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-2">Nome Completo</label>
-              <input
-                type="text"
-                value={data.name}
-                onChange={(e) => updateData('name', e.target.value)}
-                className="w-full bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-xl px-5 py-4 text-white focus:border-[#F27D26] focus:bg-[rgba(255,255,255,0.08)] outline-none transition-all"
-                placeholder="Ex: João da Silva"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-2">E-mail</label>
-              <input
-                type="email"
-                value={data.email}
-                onChange={(e) => updateData('email', e.target.value)}
-                className="w-full bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-xl px-5 py-4 text-white focus:border-[#F27D26] focus:bg-[rgba(255,255,255,0.08)] outline-none transition-all"
-                placeholder="joao@exemplo.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-2">WhatsApp</label>
-              <input
-                type="tel"
-                value={data.phone}
-                onChange={(e) => updateData('phone', e.target.value)}
-                className="w-full bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.1)] rounded-xl px-5 py-4 text-white focus:border-[#F27D26] focus:bg-[rgba(255,255,255,0.08)] outline-none transition-all"
-                placeholder="(00) 00000-0000"
-              />
-            </div>
-          </div>
-        </div>
-
-        <aside className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.1)] p-8 rounded-[24px] backdrop-blur-md hidden md:block">
-          <div className="bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-full text-[0.7rem] uppercase inline-block mb-5">
-            💡 Privacidade
-          </div>
-          <h3 className="text-sm uppercase text-[#F27D26] mb-4 tracking-[1px] font-semibold">
-            Seus dados estão seguros
-          </h3>
-          <p className="text-[#94A3B8] leading-[1.6] text-[0.95rem]">
-            Utilizamos suas informações de contato exclusivamente para enviar oportunidades de imóveis que se encaixam no seu perfil e para que nossos corretores possam te auxiliar na jornada de compra.
-          </p>
-        </aside>
-      </div>
-
-      <StepNavigation onPrev={onPrev} onNext={onNext} isValid={isValid} />
-    </div>
-  );
-}
-
-function PreferencesStep({
-  data,
-  updateData,
-  onNext,
-  onPrev,
-}: {
-  data: FormData;
-  updateData: (f: keyof FormData, v: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
-  const isValid = data.propertyType !== '' && data.buyingTimeframe !== '';
-
-  const propertyTypes = ['Apartamento', 'Casa', 'Terreno', 'Comercial'];
-  const timeframes = ['Imediatamente', 'Em até 3 meses', 'Em até 6 meses', 'Apenas pesquisando'];
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="grid md:grid-cols-[1fr_380px] gap-10 md:gap-[60px] items-start flex-1">
-        <div className="space-y-8">
-          <span className="text-[#F27D26] text-sm font-bold uppercase tracking-[2px] block">
-            O Imóvel Ideal
-          </span>
-          <h1 className="text-4xl md:text-[2.5rem] leading-[1.2] font-bold tracking-[-0.02em]">
-            O que você está buscando no momento?
-          </h1>
-
-          <div className="space-y-8 mt-8">
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-4">Tipo de Imóvel</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {propertyTypes.map((type) => (
-                  <OptionCard
-                    key={type}
-                    label={type}
-                    selected={data.propertyType === type}
-                    onClick={() => updateData('propertyType', type)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-4">Quando pretende comprar?</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {timeframes.map((time) => (
-                  <OptionCard
-                    key={time}
-                    label={time}
-                    selected={data.buyingTimeframe === time}
-                    onClick={() => updateData('buyingTimeframe', time)}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <aside className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.1)] p-8 rounded-[24px] backdrop-blur-md hidden md:block">
-          <div className="bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-full text-[0.7rem] uppercase inline-block mb-5">
-            💡 Direcionamento
-          </div>
-          <h3 className="text-sm uppercase text-[#F27D26] mb-4 tracking-[1px] font-semibold">
-            Foco no que importa
-          </h3>
-          <p className="text-[#94A3B8] leading-[1.6] text-[0.95rem]">
-            Saber o tipo de imóvel e o seu prazo nos ajuda a filtrar apenas as opções que fazem sentido para o seu momento de vida, poupando seu tempo com visitas desnecessárias.
-          </p>
-        </aside>
-      </div>
-
-      <StepNavigation onPrev={onPrev} onNext={onNext} isValid={isValid} />
-    </div>
-  );
-}
-
-function FinancialStep({
-  data,
-  updateData,
-  onNext,
-  onPrev,
-}: {
-  data: FormData;
-  updateData: (f: keyof FormData, v: string) => void;
-  onNext: () => void;
-  onPrev: () => void;
-}) {
-  const isValid = data.income !== '' && data.downPayment !== '';
-
-  const incomeRanges = ['Até R$ 5.000', 'R$ 5.001 a R$ 10.000', 'R$ 10.001 a R$ 20.000', 'Acima de R$ 20.000'];
-  const downPaymentRanges = ['Até R$ 20.000', 'R$ 20.001 a R$ 50.000', 'R$ 50.001 a R$ 100.000', 'Acima de R$ 100.000'];
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="grid md:grid-cols-[1fr_380px] gap-10 md:gap-[60px] items-start flex-1">
-        <div className="space-y-8">
-          <span className="text-[#F27D26] text-sm font-bold uppercase tracking-[2px] block">
-            Perfil Financeiro
-          </span>
-          <h1 className="text-4xl md:text-[2.5rem] leading-[1.2] font-bold tracking-[-0.02em]">
-            Essas informações ajudam a encontrar as melhores condições.
-          </h1>
-
-          <div className="space-y-8 mt-8">
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-4">Renda Familiar Mensal</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {incomeRanges.map((range) => (
-                  <OptionCard
-                    key={range}
-                    label={range}
-                    selected={data.income === range}
-                    onClick={() => updateData('income', range)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#94A3B8] mb-4">Valor disponível para entrada</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {downPaymentRanges.map((range) => (
-                  <OptionCard
-                    key={range}
-                    label={range}
-                    selected={data.downPayment === range}
-                    onClick={() => updateData('downPayment', range)}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <aside className="bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.1)] p-8 rounded-[24px] backdrop-blur-md hidden md:block">
-          <div className="bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] px-3 py-1 rounded-full text-[0.7rem] uppercase inline-block mb-5">
-            💡 Por que perguntamos isso?
-          </div>
-          <h3 className="text-sm uppercase text-[#F27D26] mb-4 tracking-[1px] font-semibold">
-            A pergunta mais importante
-          </h3>
-          <p className="text-[#94A3B8] leading-[1.6] text-[0.95rem]">
-            O valor da entrada e sua renda determinam diretamente seu poder de financiamento, o padrão do imóvel e a localização.
-            <br /><br />
-            Quanto mais clara for essa informação, mais precisa será a nossa estratégia para encontrar o imóvel que cabe perfeitamente no seu bolso.
-          </p>
-        </aside>
-      </div>
-
-      <StepNavigation onPrev={onPrev} onNext={onNext} isValid={isValid} isLast />
-    </div>
-  );
-}
-
-function SuccessScreen() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full text-center space-y-8 py-12">
+    <div className="flex flex-col items-center justify-center text-center space-y-6 py-8">
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', bounce: 0.5 }}
-        className="w-24 h-24 bg-[rgba(242,125,38,0.1)] text-[#F27D26] rounded-full flex items-center justify-center mx-auto border border-[rgba(242,125,38,0.2)]"
-        style={{ boxShadow: '0 0 40px rgba(242, 125, 38, 0.2)' }}
+        transition={{ type: 'spring', bounce: 0.5, delay: 0.1 }}
+        className="w-20 h-20 bg-[rgba(255,194,51,0.12)] text-[#FFC233] rounded-full flex items-center justify-center border border-[rgba(255,194,51,0.25)]"
+        style={{ boxShadow: '0 0 40px rgba(255, 194, 51, 0.2)' }}
       >
-        <CheckCircle2 className="w-12 h-12" />
+        <CheckCircle2 className="w-10 h-10" />
       </motion.div>
-      <div className="space-y-4">
-        <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Aplicação Recebida!</h2>
-        <p className="text-[#94A3B8] text-lg max-w-lg mx-auto leading-relaxed">
-          Obrigado por compartilhar suas informações. Nossa equipe de especialistas vai analisar seu perfil e entrar em contato em breve.
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="space-y-3"
+      >
+        <h2 className="text-[1.75rem] font-bold tracking-tight">{step.title}</h2>
+        <p className="text-[#94A3B8] text-base leading-relaxed max-w-[320px] mx-auto">{step.subtitle}</p>
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+        className="space-y-2 pt-2"
+      >
+        <p className="text-[#64748B] text-sm">
+          Redirecionando em <span className="text-[#FFC233] font-bold">{countdown}s</span>...
         </p>
-      </div>
+        <a
+          href="https://www.amaurinobre.com.br/"
+          className="text-[#FFC233] text-sm font-semibold underline underline-offset-2 hover:text-white transition-colors"
+        >
+          Ir para o site agora →
+        </a>
+      </motion.div>
     </div>
   );
 }
 
-// --- Shared UI Components ---
-
-function OptionCard({ label, selected, onClick }: { key?: string; label: string; selected: boolean; onClick: () => void }) {
+function TextInputContent({
+  step,
+  value,
+  error,
+  onChange,
+  onBlur,
+  inputType = 'text',
+}: {
+  step: StepDef;
+  value: string;
+  error: string | null;
+  onChange: (v: string) => void;
+  onBlur: () => void;
+  inputType?: string;
+}) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-4 p-5 rounded-xl border text-left transition-all duration-200",
-        selected
-          ? "bg-[rgba(242,125,38,0.2)] border-[#F27D26]"
-          : "bg-[rgba(255,255,255,0.04)] border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.08)] hover:border-[#F27D26] hover:-translate-y-0.5"
-      )}
-    >
-      <div
-        className={cn(
-          "w-[18px] h-[18px] rounded-full border-2 relative shrink-0 transition-colors",
-          selected ? "border-[#F27D26]" : "border-[rgba(255,255,255,0.1)]"
-        )}
-      >
-        {selected && (
-          <div className="absolute inset-0 m-auto w-[10px] h-[10px] bg-[#F27D26] rounded-full" />
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          className="text-[1.5rem] leading-[1.3] font-bold tracking-[-0.01em]"
+        >
+          {step.title}
+        </motion.h1>
+        {step.subtitle && (
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.12, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="text-[#94A3B8] text-sm leading-relaxed"
+          >
+            {step.subtitle}
+          </motion.p>
         )}
       </div>
-      <span className="font-medium text-[1.1rem]">{label}</span>
-    </button>
+
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="space-y-2"
+      >
+        <input
+          type={inputType}
+          inputMode={inputType === 'tel' ? 'tel' : inputType === 'email' ? 'email' : 'text'}
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          className={cn(
+            'w-full bg-[rgba(255,255,255,0.05)] border rounded-2xl px-5 py-4 text-white text-lg outline-none transition-all placeholder:text-[#475569]',
+            error
+              ? 'border-red-500/60 focus:border-red-400'
+              : 'border-[rgba(61,97,158,0.3)] focus:border-[#FFC233] focus:bg-[rgba(61,97,158,0.15)]'
+          )}
+          placeholder={step.placeholder}
+        />
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              className="flex items-center gap-1.5 text-red-400 text-sm"
+            >
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
   );
 }
 
-function StepNavigation({
-  onPrev,
-  onNext,
-  isValid,
-  isLast = false,
+function SelectContent({
+  step,
+  value,
+  onChange,
+  error,
 }: {
-  onPrev: () => void;
-  onNext: () => void;
-  isValid: boolean;
-  isLast?: boolean;
+  step: StepDef;
+  value: string;
+  onChange: (v: string) => void;
+  error: string | null;
 }) {
   return (
-    <div className="flex items-center justify-between pt-10 mt-auto">
-      <button
-        onClick={onPrev}
-        className="flex items-center gap-2 text-[#94A3B8] hover:text-white font-semibold transition-colors bg-transparent border-none cursor-pointer"
-      >
-        <ChevronLeft className="w-5 h-5" />
-        Voltar
-      </button>
-      <button
-        onClick={onNext}
-        disabled={!isValid}
-        className={cn(
-          "px-10 py-4 rounded-full font-bold text-base transition-all flex items-center gap-2",
-          isValid
-            ? "bg-[#F27D26] text-black hover:scale-105 cursor-pointer"
-            : "bg-[rgba(255,255,255,0.1)] text-[#94A3B8] cursor-not-allowed"
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          className="text-[1.5rem] leading-[1.3] font-bold tracking-[-0.01em]"
+        >
+          {step.title}
+        </motion.h1>
+        {step.subtitle && (
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.12, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            className="text-[#94A3B8] text-sm leading-relaxed"
+          >
+            {step.subtitle}
+          </motion.p>
         )}
-        style={isValid ? { boxShadow: '0 10px 30px rgba(242, 125, 38, 0.2)' } : undefined}
-      >
-        {isLast ? 'Finalizar Aplicação' : 'Próximo Passo'}
-        {!isLast && <ChevronRight className="w-5 h-5" />}
-      </button>
+      </div>
+
+      <div className="space-y-3">
+        {step.options?.map((option, i) => (
+          <motion.button
+            key={option}
+            initial={{ opacity: 0, y: 16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{
+              delay: 0.1 + i * 0.07,
+              duration: 0.35,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            onClick={() => onChange(option)}
+            className={cn(
+              'w-full flex items-center gap-4 p-4 rounded-2xl border text-left transition-all duration-200 active:scale-[0.98]',
+              value === option
+                ? 'bg-[rgba(255,194,51,0.12)] border-[#FFC233]'
+                : 'bg-[rgba(30,33,88,0.5)] border-[rgba(61,97,158,0.25)] active:bg-[rgba(61,97,158,0.2)]'
+            )}
+          >
+            <div
+              className={cn(
+                'w-5 h-5 rounded-full border-2 relative shrink-0 transition-colors',
+                value === option ? 'border-[#FFC233]' : 'border-[rgba(61,97,158,0.3)]'
+              )}
+            >
+              {value === option && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+                  className="absolute inset-0 m-auto w-[10px] h-[10px] bg-[#FFC233] rounded-full"
+                />
+              )}
+            </div>
+            <span className="font-medium text-base">{option}</span>
+          </motion.button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            className="flex items-center gap-1.5 text-red-400 text-sm"
+          >
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
